@@ -14,13 +14,18 @@ import {
   Platform,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
-
+import messaging from '@react-native-firebase/messaging';
+import {getStatusBarHeight} from 'react-native-status-bar-height';
 import Intro from './Intro';
 import Home from './Home';
+import StudyPlan from './StudyPlan';
+import Subpage from './Subpage';
 
 const Stack = createStackNavigator();
 
 const Main = props => {
+  const {navigation} = props;
+
   const toastConfig = {
     custom_type: internalState => (
       <View
@@ -54,7 +59,9 @@ const Main = props => {
               headerShown: false,
             }}>
             <Stack.Screen name="Intro" component={Intro} />
-            <Stack.Screen name="Home" component={Home} />
+            <Stack.Screen name="Home" component={Home} prop />
+            <Stack.Screen name="StudyPlan" component={StudyPlan} />
+            <Stack.Screen name="Subpage" component={Subpage} />
           </Stack.Navigator>
         </SafeAreaView>
         <Toast config={toastConfig} ref={ref => Toast.setRef(ref)} />

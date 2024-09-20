@@ -3,18 +3,32 @@ import React, {useEffect, useRef, useState} from 'react';
 import WebView from 'react-native-webview';
 import {BASE_URL} from '../Utils/APIConstant';
 import {
+  Alert,
   BackHandler,
   Dimensions,
   Image,
+  Linking,
   Platform,
   StyleSheet,
   Text,
   ToastAndroid,
   TouchableOpacity,
 } from 'react-native';
-import AudioRecorderPlayer from 'react-native-audio-recorder-player';
+import AudioRecorderPlayer, {
+  AVEncoderAudioQualityIOSType,
+  AVEncodingOption,
+  AVModeIOSOption,
+  AudioEncoderAndroidType,
+  AudioSourceAndroidType,
+} from 'react-native-audio-recorder-player';
 import messaging from '@react-native-firebase/messaging';
 import PushNotificationIOS from '@react-native-community/push-notification-ios';
+import Api from '../Api';
+import RNFetchBlob from 'rn-fetch-blob';
+import Loading from '../components/Loading';
+import {useFocusEffect, useIsFocused} from '@react-navigation/native';
+import {getStatusBarHeight} from 'react-native-status-bar-height';
+import Toast from 'react-native-toast-message';
 
 const screenWidth = Dimensions.get('window').width;
 const audioRecorderPlayer = new AudioRecorderPlayer();
@@ -22,8 +36,18 @@ audioRecorderPlayer.setSubscriptionDuration(0.1);
 
 let pwChgPop = false;
 
+const dirs = RNFetchBlob.fs.dirs;
+const year = new Date().getFullYear();
+const month = new Date().getMonth() + 1;
+const day = new Date().getDate();
+const filename =
+  year + '_' + month + '_' + day + '_' + Math.floor(Math.random() * 100);
+
 const Home = props => {
-  const {navigation} = props;
+  const {navigation, route} = props;
+  const {name} = route;
+
+  console.log('home', name);
 
   if (Platform.OS == 'ios') {
     PushNotificationIOS.setApplicationIconBadgeNumber(0);
@@ -53,7 +77,7 @@ const Home = props => {
   const webViewRef = useRef();
 
   const app_domain = BASE_URL;
-  const url = BASE_URL + '/webview/index.php?chk_app=Y&app_token=';
+  const url = BASE_URL + '/webview/register/login.php?chk_app=Y&app_token=';
   //const url = BASE_URL + '/webview/register/login.php?chk_app=Y&app_token=';
 
   let canGoBack = false;
@@ -101,16 +125,96 @@ const Home = props => {
     webViewRef.current.postMessage(chkAppData);
   };
 
-  //뒤로가기 버튼
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener(
-      'hardwareBackPress',
-      backAction,
-    );
-    return () => backHandler.remove();
+  const isFocued = useIsFocused();
 
-    //console.log(urls);
-  }, [urls]);
+  // useFocusEffect(() => {
+  //   if (isFocued) {
+  //     const backHandler = BackHandler.addEventListener(
+  //       'hardwareBackPress',
+  //       () => console.log('132123'),
+  //     );
+
+  //     console.log('home isFocued', isFocued);
+  //     return () => backHandler.remove();
+  //   }
+  // }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        const app_split = urls.split('?')[0];
+
+        //console.log("@@@@back urls2 : ", urls);
+        console.log(canGoBack);
+        if (pwChgPop) {
+          const popOffData = JSON.stringify({
+            type: 'popOff',
+            popId: 'pw_chg_pop',
+          });
+          webViewRef.current.postMessage(popOffData);
+        } else {
+          console.log('aaabb');
+          if (
+            app_split == app_domain + '/webview/' ||
+            app_split == app_domain ||
+            urls == app_domain ||
+            urls == app_domain + 'webview/' ||
+            urls == app_domain + 'webview/index.php' ||
+            urls.indexOf('feedback_list.php') != -1 ||
+            urls.indexOf('homework_list.php') != -1 ||
+            urls.indexOf('study_progress.php') != -1 ||
+            urls.indexOf('study_test.php') != -1 ||
+            urls.indexOf('video_room.php') != -1 ||
+            urls.indexOf('my_info.php') != -1 ||
+            urls.indexOf('login.php') != -1
+          ) {
+            if (!canGoBack) {
+              ToastAndroid.show(
+                '한번 더 누르면 종료합니다.',
+                ToastAndroid.SHORT,
+              );
+              canGoBack = true;
+              timeOut = setTimeout(function () {
+                canGoBack = false;
+              }, 2000);
+            } else {
+              clearTimeout(timeOut);
+              BackHandler.exitApp();
+              canGoBack = false;
+              //const sendData =JSON.stringify({ type:"종료" });
+            }
+          } else {
+            webViewRef.current.goBack();
+          }
+        }
+        return true;
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () =>
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+    }, [urls]),
+  );
+
+  //뒤로가기 버튼
+  // useEffect(() => {
+  //   if (isFocued) {
+  //     const backHandler = BackHandler.addEventListener(
+  //       'hardwareBackPress',
+  //       () => console.log('132123'),
+  //     );
+
+  //     console.log('home isFocued', isFocued);
+  //     return () => backHandler.remove();
+  //   }
+
+  //   //console.log(urls);
+  // }, [urls]);
+
+  useEffect(() => {
+    //console.log('home isFocued', isFocued);
+  }, [isFocued]);
 
   //뒤로가기 핸들러
   const backAction = () => {
@@ -121,6 +225,7 @@ const Home = props => {
       const popOffData = JSON.stringify({type: 'popOff', popId: 'pw_chg_pop'});
       webViewRef.current.postMessage(popOffData);
     } else {
+      console.log('aaabb');
       if (
         app_split == app_domain + '/webview/' ||
         app_split == app_domain ||
@@ -133,7 +238,8 @@ const Home = props => {
         urls.indexOf('study_test.php') != -1 ||
         urls.indexOf('video_room.php') != -1 ||
         urls.indexOf('my_info.php') != -1 ||
-        urls.indexOf('login.php') != -1
+        urls.indexOf('login.php') != -1 ||
+        urls.indexOf('scrab_questions.php') != -1
       ) {
         if (!canGoBack) {
           ToastAndroid.show('한번 더 누르면 종료합니다.', ToastAndroid.SHORT);
@@ -183,7 +289,24 @@ const Home = props => {
         playTime: '00:00:00',
         duration: '00:00:00',
       });
-      await audioRecorderPlayer.startRecorder();
+
+      const path = Platform.select({
+        ios: `${filename}.mp4`,
+        android: `${dirs.CacheDir}/${filename}.mp4`,
+      });
+
+      const audioSet = {
+        AudioEncoderAndroid: AudioEncoderAndroidType.AAC,
+        AudioSourceAndroid: AudioSourceAndroidType.MIC,
+        AVEncoderAudioQualityKeyIOS: AVEncoderAudioQualityIOSType.high,
+        AVNumberOfChannelsKeyIOS: 2,
+        AVFormatIDKeyIOS: AVEncodingOption.aac,
+        AVModeIOS: AVModeIOSOption.videochat,
+      };
+
+      //const uri = await audioRecorderPlayer.startRecorder();
+      const uri = await audioRecorderPlayer.startRecorder(path, audioSet);
+      console.log(uri);
     }
     audioRecorderPlayer.addRecordBackListener(e => {
       // console.log(
@@ -203,7 +326,7 @@ const Home = props => {
     if (audioRecorderPlayer) {
       setRecording(false);
       const result = await audioRecorderPlayer.stopRecorder();
-      console.log('result', result);
+      console.log('File path', result);
       setAudioPath(result);
     }
     audioRecorderPlayer.removeRecordBackListener();
@@ -227,21 +350,196 @@ const Home = props => {
   // 음성 중지
   const onPausePlay = async () => {
     setIsPlaying(false);
+    playWidth = 0;
     await audioRecorderPlayer.pausePlayer();
+  };
+
+  const getFileExtention = fileUrl => {
+    // To get the file extension
+    return /[.]/.exec(fileUrl) ? /[^.]+$/.exec(fileUrl) : undefined;
+  };
+
+  const fileUploadHandler = async () => {
+    console.log(audioPath);
+
+    let file_ext = getFileExtention(audioPath);
+    file_ext = '.' + file_ext[0];
+
+    let file_name = filename + file_ext;
+    console.log('filenames:::', filename + file_ext);
+
+    const formData = new FormData();
+    formData.append('method', 'feedback_upload');
+    formData.append('upfile', {
+      uri: audioPath,
+      name: `${file_name}`,
+      type: `audio/${file_ext}`,
+    });
+
+    const upload = await Api.multipartRequest(formData);
+
+    console.log('upload', upload);
+
+    const fileDatas = JSON.stringify({
+      type: 'fileData',
+      file_path: upload.data.file_path,
+      file_name: upload.data.file_name,
+    });
+    webViewRef.current.postMessage(fileDatas);
+    setRecordModal(false);
   };
 
   // useEffect(() => {
   //   console.log(playerDuration);
   // }, [playerDuration]);
 
+  const [pageList, setPageList] = useState([]);
+
   const onWebViewMessage = webViews => {
     let jsonData = JSON.parse(webViews.nativeEvent.data);
     console.log('jsonData.data : ', jsonData);
 
+    if (jsonData.mode == 'app_page') {
+      setPageList(jsonData.data.split('|'));
+    }
+
     if (jsonData.mode == 'voiceRecord') {
       recordModalOpenHandler();
     }
+
+    if (jsonData.mode == 'go_navigate') {
+      navigation.push('StudyPlan', {data: jsonData.data});
+    }
+
+    if (jsonData.mode == 'go_url') {
+      navigation.push('Subpage', {data: jsonData.data});
+      //Linking.openURL(jsonData.data);
+    }
+
+    if (jsonData.mode == 'open_url') {
+      //navigation.push('Subpage', {data: jsonData.data});
+      Linking.openURL(jsonData.data);
+    }
+
+    if (jsonData.mode == 'file_down') {
+      fileDownLoad(jsonData.data);
+    }
   };
+
+  const fileDownLoad = fileUrl => {
+    let date = new Date();
+    let years = date.getFullYear();
+    let month = date.getMonth();
+    if (month > 10) {
+      month = '0' + month;
+    } else {
+      month = month;
+    }
+    let days = date.getDate();
+    let hour = date.getHours();
+    let min = date.getMinutes();
+    let sec = date.getSeconds();
+
+    let dateTimes =
+      years + '' + month + '' + days + '' + hour + '' + min + '' + sec;
+
+    // File URL which we want to download
+    let FILE_URL = fileUrl;
+    // Function to get extention of the file url
+    let file_ext = getFileExtention(FILE_URL);
+
+    console.log('file_ext::::::::', file_ext);
+
+    file_ext = '.' + file_ext[0];
+
+    const {config, fs} = RNFetchBlob;
+
+    let RootDir =
+      Platform.OS === 'ios' ? fs.dirs.DocumentDir : fs.dirs.PictureDir;
+
+    let options = {
+      fileCache: true,
+      path: RootDir + '/' + dateTimes + file_ext,
+      addAndroidDownloads: {
+        path: RootDir + '/' + dateTimes + file_ext,
+        description: 'downloading file...',
+        notification: true,
+        // useDownloadManager works with Android only
+        useDownloadManager: true,
+      },
+    };
+    config(options)
+      .fetch('GET', FILE_URL)
+      .then(res => {
+        // Alert after successful downloading
+        console.log('res -> ', JSON.stringify(res));
+        Alert.alert('다운로드가 완료되었습니다.');
+        console.log('저장된 디렉토리..', RootDir + '/' + dateTimes + file_ext);
+      });
+  };
+
+  // useEffect(() => {
+  //   console.log(pageList);
+  // }, [pageList]);
+
+  useEffect(() => {
+    messaging().onMessage(remoteMessage => {
+      Toast.show({
+        type: 'info', //success | error | info
+        position: 'top',
+        text1: remoteMessage.notification.title,
+        text2: remoteMessage.notification.body,
+        visibilityTime: 3000,
+        // autoHide: remoteMessage.data.intent === 'SellerReg' ? false : true,    // true | false
+        topOffset: Platform.OS === 'ios' ? 66 + getStatusBarHeight() : 10,
+        style: {backgroundColor: 'red'},
+        bottomOffset: 100,
+        onShow: () => {},
+        onHide: () => {},
+        onPress: () => {
+          console.log('12312312313::::', remoteMessage.data);
+
+          navigation.push('StudyPlan', {
+            data: 'webview/mypage/notification_list.php?is_push=Y',
+          });
+        },
+      });
+      console.log('실행중 메시지:::', remoteMessage);
+    });
+    // 포그라운드
+    messaging().onNotificationOpenedApp(remoteMessage => {
+      console.log('포그라운드', remoteMessage);
+
+      if (remoteMessage != null) {
+        navigation.push('StudyPlan', {
+          data: 'webview/mypage/notification_list.php?is_push=Y',
+        });
+      }
+    });
+
+    // 백그라운드
+    messaging()
+      .getInitialNotification()
+      .then(remoteMessage => {
+        console.log('백그라운드::::', remoteMessage);
+
+        if (remoteMessage != null) {
+          navigation.push('StudyPlan', {
+            data: 'webview/mypage/notification_list.php?is_push=Y',
+          });
+        }
+      });
+
+    messaging().setBackgroundMessageHandler(async remoteMessage => {
+      console.log('Message handled in the background!', remoteMessage);
+
+      if (remoteMessage != null) {
+        navigation.push('StudyPlan', {
+          data: 'webview/mypage/notification_list.php?is_push=Y',
+        });
+      }
+    });
+  }, []);
 
   return (
     <Box flex={1} backgroundColor={'#fff'}>
@@ -253,6 +551,9 @@ const Home = props => {
         onMessage={webViews => onWebViewMessage(webViews)}
         onNavigationStateChange={webViews => onNavigationStateChange(webViews)}
         showsVerticalScrollIndicator={false}
+        startInLoadingState={true}
+        renderLoading={() => <Loading />}
+        javaScriptEnabled={true}
       />
       {/* 음성녹음 */}
       <Modal isOpen={recordModal} onClose={recordModalCloseHandler}>
@@ -339,7 +640,7 @@ const Home = props => {
                 )}
               </Box>
               {audioPath != '' && (
-                <TouchableOpacity onPress={recordModalCloseHandler}>
+                <TouchableOpacity onPress={fileUploadHandler}>
                   <Text style={[styles.audioModalBottomText, {color: '#333'}]}>
                     업로드
                   </Text>
